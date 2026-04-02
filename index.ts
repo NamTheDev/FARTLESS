@@ -1,0 +1,540 @@
+import {
+    Client,
+    GatewayIntentBits,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    EmbedBuilder,
+    TextChannel,
+    WebhookClient,
+    Message,
+    ButtonInteraction,
+    AttachmentBuilder,
+} from "discord.js";
+import * as fs from "fs";
+
+const DB_FILE = "users.json";
+let users: Record<
+    string,
+    { balance: number; purchases: Record<string, number> }
+> = {};
+
+if (fs.existsSync(DB_FILE)) {
+    users = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
+}
+
+function saveDB() {
+    fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
+}
+
+function getOrCreateUser(userId: string) {
+    if (!users[userId]) {
+        users[userId] = { balance: 0, purchases: {} };
+        saveDB();
+    }
+    return users[userId];
+}
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ],
+});
+
+const WEBHOOK_AVATAR =
+    "https://media.discordapp.net/attachments/1359539014373343484/1488515568700227634/images_3.jpg?ex=69cf09e6&is=69cdb866&hm=09c66e3a056b86c4a0432ea1b5d8bf4eac57d24487a740d4cc2a561edab717de&=&format=webp";
+
+const loots = [
+    {
+        name: "Blood Coin",
+        minVal: 5,
+        maxVal: 10,
+        minSpawn: 5 * 60,
+        maxSpawn: 5 * 60,
+        maxClaims: 5,
+        duration: 30,
+        image: "blood_coin.png",
+    },
+    {
+        name: "Gore Coin",
+        minVal: 15,
+        maxVal: 30,
+        minSpawn: 10 * 60,
+        maxSpawn: 15 * 60,
+        maxClaims: 5,
+        duration: 60,
+        image: "gore_coin.png",
+    },
+    {
+        name: "Blood Money",
+        minVal: 50,
+        maxVal: 75,
+        minSpawn: 20 * 60,
+        maxSpawn: 35 * 60,
+        maxClaims: 3,
+        duration: 5 * 60,
+        image: "blood_money.png",
+    },
+    {
+        name: "Gore Money",
+        minVal: 100,
+        maxVal: 150,
+        minSpawn: 60 * 60,
+        maxSpawn: 120 * 60,
+        maxClaims: 3,
+        duration: 12 * 60,
+        image: "gore_money.png",
+    },
+    {
+        name: "Bleeding Treasure",
+        minVal: 500,
+        maxVal: 666,
+        minSpawn: 60 * 60,
+        maxSpawn: 180 * 60,
+        maxClaims: 2,
+        duration: 30 * 60,
+        image: null,
+    },
+];
+
+const shopItems: Record<
+    string,
+    { name: string; price: number; limit: number }
+> = {
+    namechange: { name: "Namechange Perm", price: 185, limit: 3 },
+    image: { name: "Image Perm", price: 465, limit: 3 },
+    poll: { name: "Poll Perm", price: 1399, limit: 3 },
+    emoji: { name: "Custom Emoji", price: 3999, limit: 1 },
+    role: { name: "Custom Role", price: 6699, limit: 1 },
+    xp100: { name: "100 XP", price: 65, limit: 100 },
+    xp250: { name: "250 XP", price: 120, limit: 100 },
+    xp350: { name: "350 XP", price: 245, limit: 100 },
+    xp500: { name: "500 XP", price: 355, limit: 100 },
+};
+
+const activeClaims = new Map<
+    string,
+    {
+        claimsLeft: number;
+        claimedBy: Set<string>;
+        messageId: string;
+        webhookId: string;
+        webhookToken: string;
+        lootName: string;
+        value: number;
+        duration: number;
+        expiryTimestamp: number;
+        image: string | null;
+    }
+>();
+
+const getRandomInt = (min: number, max: number) =>
+    Math.floor(Math.random() * (max - min + 1)) + min;
+
+async function getOrCreateWebhook(channelId: string) {
+    const channel = (await client.channels.fetch(channelId)) as TextChannel;
+    if (!channel) return null;
+
+    const webhooks = await channel.fetchWebhooks();
+    let botWebhook = webhooks.find((wh) => wh.owner?.id === client.user?.id);
+
+    if (!botWebhook) {
+        botWebhook = await channel.createWebhook({
+            name: "FARTLESS",
+            avatar: WEBHOOK_AVATAR,
+        });
+    }
+    return botWebhook;
+}
+
+// Public messages still use FARTLESS Webhook
+async function commandReply(message: Message, payload: any) {
+    const webhook = await getOrCreateWebhook(message.channelId);
+    if (webhook) {
+        const finalPayload = {
+            ...payload,
+            username: "FARTLESS",
+            avatarURL: WEBHOOK_AVATAR,
+        };
+        finalPayload.content = `<@${message.author.id}> ${finalPayload.content || ""}`;
+        await webhook.send(finalPayload);
+    }
+}
+
+async function triggerSpawn(loot: (typeof loots)[0], channelId: string) {
+    const value = getRandomInt(loot.minVal, loot.maxVal);
+    const dropId = Date.now().toString() + getRandomInt(1, 1000).toString();
+    const expiryTimestamp = Math.floor(Date.now() / 1000) + loot.duration;
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🩸 ${loot.name} Appeared!`)
+        .setDescription(
+            `Value: **${value}** | Claims available: **${loot.maxClaims}**\n` +
+                `Disappears: <t:${expiryTimestamp}:R>`,
+        )
+        .setColor("Red");
+
+    const files: AttachmentBuilder[] = [];
+    if (loot.image) {
+        files.push(new AttachmentBuilder(`./media/${loot.image}`));
+        embed.setThumbnail(`attachment://${loot.image}`);
+    }
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`claim_${dropId}`)
+            .setLabel("Claim")
+            .setStyle(ButtonStyle.Danger),
+    );
+
+    const webhook = await getOrCreateWebhook(channelId);
+    if (webhook) {
+        const msg = await webhook.send({
+            embeds: [embed],
+            components: [row],
+            files: files,
+            username: "FARTLESS",
+            avatarURL: WEBHOOK_AVATAR,
+        });
+
+        if (typeof msg.id === "string" && webhook.token) {
+            activeClaims.set(dropId, {
+                claimsLeft: loot.maxClaims,
+                claimedBy: new Set(),
+                messageId: msg.id,
+                webhookId: webhook.id,
+                webhookToken: webhook.token,
+                lootName: loot.name,
+                value: value,
+                duration: loot.duration,
+                expiryTimestamp: expiryTimestamp,
+                image: loot.image,
+            });
+
+            setTimeout(() => {
+                webhook.deleteMessage(msg.id).catch(() => {});
+                activeClaims.delete(dropId);
+            }, loot.duration * 1000);
+        }
+    }
+}
+
+function scheduleSpawn(loot: (typeof loots)[0]) {
+    const nextSpawnSeconds = getRandomInt(loot.minSpawn, loot.maxSpawn);
+    setTimeout(async () => {
+        await triggerSpawn(loot, Bun.env.CHANNEL_ID as string);
+        scheduleSpawn(loot);
+    }, nextSpawnSeconds * 1000);
+}
+
+client.once("ready", () => {
+    console.log(`Log in: ${client.user?.tag}`);
+    loots.forEach((loot) => scheduleSpawn(loot));
+});
+
+const PREFIX = "fartless ";
+
+client.on("messageCreate", async (message) => {
+    if (message.author.bot || !message.content.toLowerCase().startsWith(PREFIX))
+        return;
+
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const command = args.shift()?.toLowerCase();
+
+    if (command === "help") {
+        const embed = new EmbedBuilder()
+            .setTitle("🛠️ FARTLESS Bot Commands")
+            .setColor("DarkButNotBlack")
+            .addFields(
+                {
+                    name: "`fartless rewards`",
+                    value: "Displays all possible loot drops.",
+                },
+                {
+                    name: "`fartless balance`",
+                    value: "Check your current gorency balance.",
+                },
+                {
+                    name: "`fartless receipt`",
+                    value: "Shows your purchased items.",
+                },
+                {
+                    name: "`fartless gift @user <amount>`",
+                    value: "Gift gorency to someone else.",
+                },
+                {
+                    name: "`fartless spawnshop`",
+                    value: "(Admins only) Spawns the shop menu.",
+                },
+                {
+                    name: "`fartless spawnreward <name>`",
+                    value: "(Admins only) Spawn loot instantly.",
+                },
+            );
+        await commandReply(message, { embeds: [embed] });
+    }
+
+    if (
+        command === "spawnreward" &&
+        message.member?.permissions.has("Administrator")
+    ) {
+        const lootName = args.join(" ");
+        const loot = loots.find(
+            (l) => l.name.toLowerCase() === lootName.toLowerCase(),
+        );
+        if (!loot) {
+            await commandReply(message, {
+                content: `❌ Could not find loot named **${lootName}**.`,
+            });
+            return;
+        }
+        await triggerSpawn(loot, message.channelId);
+    }
+
+    if (command === "rewards") {
+        const embed = new EmbedBuilder()
+            .setTitle("🎁 Loot Table & Rewards")
+            .setColor("DarkRed")
+            .setDescription(
+                loots
+                    .map(
+                        (l) =>
+                            `**${l.name}**\nValue: ${l.minVal}-${l.maxVal} | Spawns: every ${l.minSpawn / 60}m - ${l.maxSpawn / 60}m | Claims: ${l.maxClaims} | Stays for: ${l.duration >= 60 ? l.duration / 60 + "m" : l.duration + "s"}`,
+                    )
+                    .join("\n\n"),
+            );
+        await commandReply(message, { embeds: [embed] });
+    }
+
+    if (command === "balance" || command === "bal") {
+        const user = getOrCreateUser(message.author.id);
+        await commandReply(message, {
+            content: `💰 Your current balance is: **${user.balance}** gorency.`,
+        });
+    }
+
+    if (command === "gift") {
+        const target = message.mentions.users.first();
+        if (!target || target.id === message.author.id) {
+            await commandReply(message, { content: "❌ Invalid target user!" });
+            return;
+        }
+        const amountStr = args.find((arg) => !arg.startsWith("<@"));
+        const amount = parseInt(amountStr || "");
+        if (isNaN(amount) || amount <= 0) {
+            await commandReply(message, {
+                content: "❌ Please provide a valid amount!",
+            });
+            return;
+        }
+        const sender = getOrCreateUser(message.author.id);
+        if (sender.balance < amount) {
+            await commandReply(message, {
+                content: `❌ Insufficient funds! Balance: **${sender.balance}**.`,
+            });
+            return;
+        }
+        sender.balance -= amount;
+        const receiver = getOrCreateUser(target.id);
+        receiver.balance += amount;
+        saveDB();
+        await commandReply(message, {
+            content: `🎁 Gifted **${amount}** to ${target.toString()}!`,
+        });
+    }
+
+    if (command === "receipt") {
+        const user = getOrCreateUser(message.author.id);
+        const boughtItems = Object.entries(user.purchases)
+            .map(
+                ([key, count]) =>
+                    `**${shopItems[key]?.name || key}**: ${count} time(s)`,
+            )
+            .join("\n");
+        const embed = new EmbedBuilder()
+            .setTitle(`🎒 ${message.author.username}'s Receipt`)
+            .setColor("Blue")
+            .setDescription(
+                `**Balance:** ${user.balance} gorency\n\n**Purchases:**\n${boughtItems || "Nothing yet!"}`,
+            );
+        await commandReply(message, { embeds: [embed] });
+    }
+
+    if (
+        command === "spawnshop" &&
+        message.member?.permissions.has("Administrator")
+    ) {
+        const embed = new EmbedBuilder()
+            .setTitle("🛒 Mysterious Shop")
+            .setDescription(
+                "Buy event perks here!\n\n" +
+                    Object.values(shopItems)
+                        .map((i) => `**${i.name}** - ${i.price} gorency`)
+                        .join("\n"),
+            )
+            .setColor("Purple");
+
+        const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setCustomId("shop_buy_namechange")
+                .setLabel("Buy Namechange Perm")
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_image")
+                .setLabel("Buy Image Perm")
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_poll")
+                .setLabel("Buy Poll Perm")
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_emoji")
+                .setLabel("Buy Custom Emoji")
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_role")
+                .setLabel("Buy Custom Role")
+                .setStyle(ButtonStyle.Success),
+        );
+        const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setCustomId("shop_buy_xp100")
+                .setLabel("100 XP")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_xp250")
+                .setLabel("250 XP")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_xp350")
+                .setLabel("350 XP")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId("shop_buy_xp500")
+                .setLabel("500 XP")
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId("shop_balance")
+                .setLabel("Check Balance")
+                .setStyle(ButtonStyle.Secondary),
+        );
+
+        const webhook = await getOrCreateWebhook(message.channelId);
+        if (webhook)
+            await webhook.send({
+                embeds: [embed],
+                components: [row1, row2],
+                username: "FARTLESS",
+                avatarURL: WEBHOOK_AVATAR,
+            });
+    }
+});
+
+client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    // SHOP INTERACTIONS
+    if (interaction.customId.startsWith("shop_")) {
+        const user = getOrCreateUser(interaction.user.id);
+
+        if (interaction.customId === "shop_balance") {
+            return interaction.reply({
+                content: `💰 Your current balance is: **${user.balance}** gorency.`,
+                ephemeral: true,
+            });
+        }
+
+        const itemKey = interaction.customId.replace("shop_buy_", "");
+        const item = shopItems[itemKey];
+
+        if (item) {
+            const currentPurchases = user.purchases[itemKey] || 0;
+            if (currentPurchases >= item.limit) {
+                return interaction.reply({
+                    content: `❌ You reached the limit for **${item.name}**!`,
+                    ephemeral: true,
+                });
+            }
+            if (user.balance < item.price) {
+                return interaction.reply({
+                    content: `❌ You need **${item.price}** gorency! Balance: **${user.balance}**.`,
+                    ephemeral: true,
+                });
+            }
+
+            user.balance -= item.price;
+            user.purchases[itemKey] = currentPurchases + 1;
+            saveDB();
+            return interaction.reply({
+                content: `✅ Bought **${item.name}**! New balance: **${user.balance}**.`,
+                ephemeral: true,
+            });
+        }
+    }
+
+    // CLAIM INTERACTIONS
+    if (interaction.customId.startsWith("claim_")) {
+        const dropId = interaction.customId.replace("claim_", "");
+        const dropData = activeClaims.get(dropId);
+
+        if (!dropData) {
+            return interaction.reply({
+                content: "❌ This loot has expired or was fully claimed!",
+                ephemeral: true,
+            });
+        }
+        if (dropData.claimedBy.has(interaction.user.id)) {
+            return interaction.reply({
+                content: "❌ You already claimed this drop!",
+                ephemeral: true,
+            });
+        }
+        if (dropData.claimsLeft <= 0) {
+            return interaction.reply({
+                content: "❌ Fully claimed!",
+                ephemeral: true,
+            });
+        }
+
+        dropData.claimedBy.add(interaction.user.id);
+        dropData.claimsLeft--;
+        const user = getOrCreateUser(interaction.user.id);
+        user.balance += dropData.value;
+        saveDB();
+
+        // Inform user privately they succeeded
+        await interaction.reply({
+            content: `🎉 Claimed **${dropData.lootName}** for **${dropData.value}**! Balance: ${user.balance}`,
+            ephemeral: true,
+        });
+
+        const whClient = new WebhookClient({
+            id: dropData.webhookId,
+            token: dropData.webhookToken,
+        });
+
+        if (dropData.claimsLeft === 0) {
+            activeClaims.delete(dropId);
+            whClient.deleteMessage(dropData.messageId).catch(() => {});
+        } else {
+            const updatedEmbed = new EmbedBuilder()
+                .setTitle(`🩸 ${dropData.lootName} Appeared!`)
+                .setDescription(
+                    `Value: **${dropData.value}** | Claims available: **${dropData.claimsLeft}**\n` +
+                        `Disappears: <t:${dropData.expiryTimestamp}:R>`,
+                )
+                .setColor("Red");
+
+            if (dropData.image)
+                updatedEmbed.setThumbnail(`attachment://${dropData.image}`);
+
+            whClient
+                .editMessage(dropData.messageId, { embeds: [updatedEmbed] })
+                .catch(() => {});
+        }
+    }
+});
+
+client.login(Bun.env.TOKEN);
