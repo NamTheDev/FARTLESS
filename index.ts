@@ -11,8 +11,9 @@ import {
   AttachmentBuilder,
 } from "discord.js";
 import * as fs from "fs";
+import { join } from "path";
 
-const DB_FILE = "users.json";
+const DB_FILE = join(process.cwd(), ".cache", "users.json");
 let users: Record<
   string,
   { balance: number; purchases: Record<string, number> }
@@ -439,7 +440,6 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.customId === "shop_balance") {
       return interaction.reply({
         content: `💰 Your current balance is: **${user.balance}** gorency.`,
-        ephemeral: true,
       });
     }
 
@@ -451,13 +451,11 @@ client.on("interactionCreate", async (interaction) => {
       if (currentPurchases >= item.limit) {
         return interaction.reply({
           content: `❌ You reached the limit for **${item.name}**!`,
-          ephemeral: true,
         });
       }
       if (user.balance < item.price) {
         return interaction.reply({
           content: `❌ You need **${item.price}** gorency! Balance: **${user.balance}**.`,
-          ephemeral: true,
         });
       }
 
@@ -466,7 +464,6 @@ client.on("interactionCreate", async (interaction) => {
       saveDB();
       return interaction.reply({
         content: `✅ Bought **${item.name}**! New balance: **${user.balance}**.`,
-        ephemeral: true,
       });
     }
   }
@@ -479,19 +476,16 @@ client.on("interactionCreate", async (interaction) => {
     if (!dropData) {
       return interaction.reply({
         content: "❌ This loot has expired or was fully claimed!",
-        ephemeral: true,
       });
     }
     if (dropData.claimedBy.has(interaction.user.id)) {
       return interaction.reply({
         content: "❌ You already claimed this drop!",
-        ephemeral: true,
       });
     }
     if (dropData.claimsLeft <= 0) {
       return interaction.reply({
         content: "❌ Fully claimed!",
-        ephemeral: true,
       });
     }
 
@@ -504,7 +498,6 @@ client.on("interactionCreate", async (interaction) => {
     // Inform user privately they succeeded
     await interaction.reply({
       content: `🎉 Claimed **${dropData.lootName}** for **${dropData.value}**! Balance: ${user.balance}`,
-      ephemeral: true,
     });
 
     const whClient = new WebhookClient({
