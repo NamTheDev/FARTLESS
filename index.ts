@@ -41,6 +41,9 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
+  allowedMentions: {
+    repliedUser: false
+  }
 });
 
 const WEBHOOK_AVATAR =
