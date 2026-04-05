@@ -519,7 +519,7 @@ client.on("interactionCreate", async (interaction) => {
       components: [],
     });
   } else if (interaction.customId === "cancel_receipt") {
-    await interaction.deleteReply();
+    await interaction.message.delete();
   }
 
   if (interaction.customId.startsWith("shop_")) {
