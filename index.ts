@@ -386,7 +386,7 @@ client.on("messageCreate", async (message) => {
         new ButtonBuilder()
           .setCustomId("confirm_receipt")
           .setLabel("Yes, Generate Receipt")
-          .setStyle(ButtonStyle.Danger),
+          .setStyle(ButtonStyle.Success),
       )
       .addComponents(
         new ButtonBuilder()
