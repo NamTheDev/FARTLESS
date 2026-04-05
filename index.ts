@@ -381,12 +381,19 @@ client.on("messageCreate", async (message) => {
       )
       .setColor("Yellow");
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId("confirm_receipt")
-        .setLabel("Yes, Generate Receipt")
-        .setStyle(ButtonStyle.Danger),
-    );
+    const row = new ActionRowBuilder<ButtonBuilder>()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId("confirm_receipt")
+          .setLabel("Yes, Generate Receipt")
+          .setStyle(ButtonStyle.Danger),
+      )
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId("cancel_receipt")
+          .setLabel("Cancel")
+          .setStyle(ButtonStyle.Danger),
+      );
 
     await commandReply(message, { embeds: [embed], components: [row] });
   }
@@ -511,6 +518,8 @@ client.on("interactionCreate", async (interaction) => {
       embeds: [finalEmbed],
       components: [],
     });
+  } else if (interaction.customId === "cancel_receipt") {
+    await interaction.deleteReply();
   }
 
   if (interaction.customId.startsWith("shop_")) {
