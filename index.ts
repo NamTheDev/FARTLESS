@@ -9,6 +9,7 @@ import {
   WebhookClient,
   Message,
   AttachmentBuilder,
+  ComponentType,
 } from "discord.js";
 import * as fs from "fs";
 import { join } from "path";
@@ -42,8 +43,8 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
   allowedMentions: {
-    repliedUser: false
-  }
+    repliedUser: false,
+  },
 });
 
 const WEBHOOK_AVATAR =
@@ -152,7 +153,6 @@ async function getOrCreateWebhook(channelId: string) {
   return botWebhook;
 }
 
-// Public messages still use FARTLESS Webhook
 async function commandReply(message: Message, payload: any) {
   const webhook = await getOrCreateWebhook(message.channelId);
   if (webhook) {
@@ -246,7 +246,7 @@ client.on("messageCreate", async (message) => {
 
   if (command === "help") {
     const embed = new EmbedBuilder()
-      .setTitle("🛠️ FARTLESS Bot Commands")
+      .setTitle("🛠 FARTLESS Bot Commands")
       .setColor("DarkButNotBlack")
       .addFields(
         {
@@ -258,8 +258,12 @@ client.on("messageCreate", async (message) => {
           value: "Check your current gorency balance.",
         },
         {
+          name: "`fartless inventory`",
+          value: "Check your purchased items.",
+        },
+        {
           name: "`fartless receipt`",
-          value: "Shows your purchased items.",
+          value: "Finalize and clear your purchases (1 use only!).",
         },
         {
           name: "`fartless gift @user <amount>`",
@@ -316,6 +320,21 @@ client.on("messageCreate", async (message) => {
     });
   }
 
+  if (command === "inventory" || command === "inv") {
+    const user = getOrCreateUser(message.author.id);
+    const boughtItems = Object.entries(user.purchases)
+      .map(
+        ([key, count]) =>
+          `**${shopItems[key]?.name || key}**: ${count} time(s)`,
+      )
+      .join("\n");
+    const embed = new EmbedBuilder()
+      .setTitle(`🎒 ${message.author.username}'s Inventory`)
+      .setColor("Green")
+      .setDescription(boughtItems || "Your inventory is empty.");
+    await commandReply(message, { embeds: [embed] });
+  }
+
   if (command === "gift") {
     const target = message.mentions.users.first();
     if (!target || target.id === message.author.id) {
@@ -348,19 +367,28 @@ client.on("messageCreate", async (message) => {
 
   if (command === "receipt") {
     const user = getOrCreateUser(message.author.id);
-    const boughtItems = Object.entries(user.purchases)
-      .map(
-        ([key, count]) =>
-          `**${shopItems[key]?.name || key}**: ${count} time(s)`,
-      )
-      .join("\n");
+    if (Object.keys(user.purchases).length === 0) {
+      await commandReply(message, {
+        content: "❌ You have no purchases to receipt!",
+      });
+      return;
+    }
+
     const embed = new EmbedBuilder()
-      .setTitle(`🎒 ${message.author.username}'s Receipt`)
-      .setColor("Blue")
+      .setTitle("⚠️ Receipt Confirmation")
       .setDescription(
-        `**Balance:** ${user.balance} gorency\n\n**Purchases:**\n${boughtItems || "Nothing yet!"}`,
-      );
-    await commandReply(message, { embeds: [embed] });
+        "Generating this receipt is **1 use only**. It will delete all purchased items from your database after use.\n\n**Are you sure?**",
+      )
+      .setColor("Yellow");
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId("confirm_receipt")
+        .setLabel("Yes, Generate Receipt")
+        .setStyle(ButtonStyle.Danger),
+    );
+
+    await commandReply(message, { embeds: [embed], components: [row] });
   }
 
   if (
@@ -417,6 +445,12 @@ client.on("messageCreate", async (message) => {
         .setLabel("500 XP")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
+        .setCustomId("shop_user_inventory")
+        .setLabel("My Inventory")
+        .setStyle(ButtonStyle.Secondary),
+    );
+    const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
         .setCustomId("shop_balance")
         .setLabel("Check Balance")
         .setStyle(ButtonStyle.Secondary),
@@ -426,7 +460,7 @@ client.on("messageCreate", async (message) => {
     if (webhook)
       await webhook.send({
         embeds: [embed],
-        components: [row1, row2],
+        components: [row1, row2, row3],
         username: "FARTLESS",
         avatarURL: WEBHOOK_AVATAR,
       });
@@ -436,13 +470,65 @@ client.on("messageCreate", async (message) => {
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
-  // SHOP INTERACTIONS
+  if (interaction.customId === "confirm_receipt") {
+    const user = getOrCreateUser(interaction.user.id);
+    if (Object.keys(user.purchases).length === 0) {
+      return interaction.reply({
+        content: "❌ No items found.",
+        ephemeral: true,
+      });
+    }
+
+    let totalSpent = 0;
+    const itemsList = Object.entries(user.purchases)
+      .map(([key, count]) => {
+        const price = shopItems[key]?.price || 0;
+        totalSpent += price * count;
+        return `**${shopItems[key]?.name || key}**: ${count}x (${price * count} gorency)`;
+      })
+      .join("\n");
+
+    const balBefore = user.balance + totalSpent;
+    const finalEmbed = new EmbedBuilder()
+      .setTitle(`🧾 Final Receipt for ${interaction.user.username}`)
+      .setColor("Blue")
+      .addFields(
+        { name: "Purchased Items", value: itemsList || "None" },
+        {
+          name: "Calculation",
+          value: `\`${balBefore} (Start) - ${totalSpent} (Spent) = ${user.balance}\``,
+        },
+        {
+          name: "Balance after deduction",
+          value: `**${user.balance}** gorency`,
+        },
+      );
+
+    user.purchases = {};
+    saveDB();
+
+    return interaction.update({
+      embeds: [finalEmbed],
+      components: [],
+    });
+  }
+
   if (interaction.customId.startsWith("shop_")) {
     const user = getOrCreateUser(interaction.user.id);
 
     if (interaction.customId === "shop_balance") {
       return interaction.reply({
         content: `💰 Your current balance is: **${user.balance}** gorency.`,
+        ephemeral: true,
+      });
+    }
+
+    if (interaction.customId === "shop_user_inventory") {
+      const items = Object.entries(user.purchases)
+        .map(([key, count]) => `**${shopItems[key]?.name || key}**: ${count}`)
+        .join("\n");
+      return interaction.reply({
+        content: `🎒 **Your Purchased Items:**\n${items || "Nothing yet!"}`,
         ephemeral: true,
       });
     }
@@ -475,7 +561,6 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // CLAIM INTERACTIONS
   if (interaction.customId.startsWith("claim_")) {
     const dropId = interaction.customId.replace("claim_", "");
     const dropData = activeClaims.get(dropId);
@@ -505,7 +590,6 @@ client.on("interactionCreate", async (interaction) => {
     user.balance += dropData.value;
     saveDB();
 
-    // Inform user privately they succeeded
     await interaction.reply({
       content: `🎉 Claimed **${dropData.lootName}** for **${dropData.value}**! Balance: ${user.balance}`,
       ephemeral: true,
