@@ -196,7 +196,7 @@ function scheduleSpawn(loot: (typeof loots)[0]) {
 
 client.once("ready", () => {
   console.log(`Log in: ${client.user?.tag}`);
-  // loots.forEach((loot) => scheduleSpawn(loot));
+  loots.forEach((loot) => scheduleSpawn(loot));
 });
 
 const PREFIX = "rf ";
