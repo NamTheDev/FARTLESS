@@ -102,15 +102,13 @@ const shopItems: Record<
   string,
   { name: string; price: number; limit: number }
 > = {
-  namechange: { name: "Namechange Perm", price: 185, limit: 3 },
-  image: { name: "Image Perm", price: 465, limit: 3 },
-  poll: { name: "Poll Perm", price: 1399, limit: 3 },
-  emoji: { name: "Custom Emoji", price: 3999, limit: 1 },
-  role: { name: "Custom Role", price: 6699, limit: 1 },
-  xp100: { name: "100 XP", price: 65, limit: 100 },
-  xp250: { name: "250 XP", price: 120, limit: 100 },
-  xp350: { name: "350 XP", price: 245, limit: 100 },
-  xp500: { name: "500 XP", price: 355, limit: 100 },
+  namechange: { name: "Namechange Perm", price: 407, limit: 3 },
+  image: { name: "Image Perm", price: 1023, limit: 3 },
+  poll: { name: "Poll Perm", price: 3078, limit: 3 },
+  xp100: { name: "100 XP", price: 143, limit: 100 },
+  xp250: { name: "250 XP", price: 264, limit: 100 },
+  xp350: { name: "350 XP", price: 539, limit: 100 },
+  xp500: { name: "500 XP", price: 781, limit: 100 },
 };
 
 const activeClaims = new Map<
@@ -133,7 +131,8 @@ const getRandomInt = (min: number, max: number) =>
 
 async function commandReply(message: Message, payload: any) {
   const content = `<@${message.author.id}> ${payload.content || ""}`;
-  await message.channel.send({ ...payload, content });
+  if (message.channel.isSendable())
+    await message.channel.send({ ...payload, content });
 }
 
 async function triggerSpawn(loot: (typeof loots)[0], channelId: string) {
@@ -200,7 +199,7 @@ client.once("ready", () => {
   loots.forEach((loot) => scheduleSpawn(loot));
 });
 
-const PREFIX = "fartless ";
+const PREFIX = "rf ";
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot || !message.content.toLowerCase().startsWith(PREFIX))
@@ -211,32 +210,32 @@ client.on("messageCreate", async (message) => {
 
   if (command === "help") {
     const embed = new EmbedBuilder()
-      .setTitle("🛠 FARTLESS Bot Commands")
+      .setTitle("🛠 FEARLESS Bot Commands")
       .setColor("DarkButNotBlack")
       .addFields(
         {
-          name: "`fartless rewards`",
+          name: "`rf rewards`",
           value: "Displays all possible loot drops.",
         },
         {
-          name: "`fartless balance`",
+          name: "`rf balance`",
           value: "Check your current gorency balance.",
         },
-        { name: "`fartless inventory`", value: "Check your purchased items." },
+        { name: "`rf inventory`", value: "Check your purchased items." },
         {
-          name: "`fartless receipt`",
+          name: "`rf receipt`",
           value: "Finalize and clear your purchases (1 use only!).",
         },
         {
-          name: "`fartless gift @user <amount>`",
+          name: "`rf gift @user <amount>`",
           value: "Gift gorency to someone else.",
         },
         {
-          name: "`fartless spawnshop`",
+          name: "`rf spawnshop`",
           value: "(Admins only) Spawns the shop menu.",
         },
         {
-          name: "`fartless spawnreward <name>`",
+          name: "`rf spawnreward <name>`",
           value: "(Admins only) Spawn loot instantly.",
         },
       );
@@ -380,14 +379,6 @@ client.on("messageCreate", async (message) => {
         .setCustomId("shop_buy_poll")
         .setLabel("Buy Poll Perm")
         .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId("shop_buy_emoji")
-        .setLabel("Buy Custom Emoji")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId("shop_buy_role")
-        .setLabel("Buy Custom Role")
-        .setStyle(ButtonStyle.Success),
     );
     const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
