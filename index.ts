@@ -5,11 +5,9 @@ import {
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
-  TextChannel,
-  WebhookClient,
   Message,
   AttachmentBuilder,
-  ComponentType,
+  TextChannel,
 } from "discord.js";
 import * as fs from "fs";
 import { join } from "path";
@@ -46,9 +44,6 @@ const client = new Client({
     repliedUser: false,
   },
 });
-
-const WEBHOOK_AVATAR =
-  "https://media.discordapp.net/attachments/1359539014373343484/1488515568700227634/images_3.jpg?ex=69cf09e6&is=69cdb866&hm=09c66e3a056b86c4a0432ea1b5d8bf4eac57d24487a740d4cc2a561edab717de&=&format=webp";
 
 const loots = [
   {
@@ -124,8 +119,7 @@ const activeClaims = new Map<
     claimsLeft: number;
     claimedBy: Set<string>;
     messageId: string;
-    webhookId: string;
-    webhookToken: string;
+    channelId: string;
     lootName: string;
     value: number;
     duration: number;
@@ -137,33 +131,9 @@ const activeClaims = new Map<
 const getRandomInt = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
 
-async function getOrCreateWebhook(channelId: string) {
-  const channel = (await client.channels.fetch(channelId)) as TextChannel;
-  if (!channel) return null;
-
-  const webhooks = await channel.fetchWebhooks();
-  let botWebhook = webhooks.find((wh) => wh.owner?.id === client.user?.id);
-
-  if (!botWebhook) {
-    botWebhook = await channel.createWebhook({
-      name: "FARTLESS",
-      avatar: WEBHOOK_AVATAR,
-    });
-  }
-  return botWebhook;
-}
-
 async function commandReply(message: Message, payload: any) {
-  const webhook = await getOrCreateWebhook(message.channelId);
-  if (webhook) {
-    const finalPayload = {
-      ...payload,
-      username: "FARTLESS",
-      avatarURL: WEBHOOK_AVATAR,
-    };
-    finalPayload.content = `<@${message.author.id}> ${finalPayload.content || ""}`;
-    await webhook.send(finalPayload);
-  }
+  const content = `<@${message.author.id}> ${payload.content || ""}`;
+  await message.channel.send({ ...payload, content });
 }
 
 async function triggerSpawn(loot: (typeof loots)[0], channelId: string) {
@@ -190,35 +160,30 @@ async function triggerSpawn(loot: (typeof loots)[0], channelId: string) {
       .setStyle(ButtonStyle.Danger),
   );
 
-  const webhook = await getOrCreateWebhook(channelId);
-  if (webhook) {
-    const msg = await webhook.send({
+  const channel = (await client.channels.fetch(channelId)) as TextChannel;
+  if (channel) {
+    const msg = await channel.send({
       embeds: [embed],
       components: [row],
       files: files,
-      username: "FARTLESS",
-      avatarURL: WEBHOOK_AVATAR,
     });
 
-    if (typeof msg.id === "string" && webhook.token) {
-      activeClaims.set(dropId, {
-        claimsLeft: loot.maxClaims,
-        claimedBy: new Set(),
-        messageId: msg.id,
-        webhookId: webhook.id,
-        webhookToken: webhook.token,
-        lootName: loot.name,
-        value: value,
-        duration: loot.duration,
-        expiryTimestamp: expiryTimestamp,
-        image: loot.image,
-      });
+    activeClaims.set(dropId, {
+      claimsLeft: loot.maxClaims,
+      claimedBy: new Set(),
+      messageId: msg.id,
+      channelId: channel.id,
+      lootName: loot.name,
+      value: value,
+      duration: loot.duration,
+      expiryTimestamp: expiryTimestamp,
+      image: loot.image,
+    });
 
-      setTimeout(() => {
-        webhook.deleteMessage(msg.id).catch(() => {});
-        activeClaims.delete(dropId);
-      }, loot.duration * 1000);
-    }
+    setTimeout(() => {
+      msg.delete().catch(() => {});
+      activeClaims.delete(dropId);
+    }, loot.duration * 1000);
   }
 }
 
@@ -257,10 +222,7 @@ client.on("messageCreate", async (message) => {
           name: "`fartless balance`",
           value: "Check your current gorency balance.",
         },
-        {
-          name: "`fartless inventory`",
-          value: "Check your purchased items.",
-        },
+        { name: "`fartless inventory`", value: "Check your purchased items." },
         {
           name: "`fartless receipt`",
           value: "Finalize and clear your purchases (1 use only!).",
@@ -373,28 +335,22 @@ client.on("messageCreate", async (message) => {
       });
       return;
     }
-
     const embed = new EmbedBuilder()
       .setTitle("⚠️ Receipt Confirmation")
       .setDescription(
         "Generating this receipt is **1 use only**. It will delete all purchased items from your database after use.\n\n**Are you sure?**",
       )
       .setColor("Yellow");
-
-    const row = new ActionRowBuilder<ButtonBuilder>()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId("confirm_receipt")
-          .setLabel("Yes, Generate Receipt")
-          .setStyle(ButtonStyle.Success),
-      )
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId("cancel_receipt")
-          .setLabel("Cancel")
-          .setStyle(ButtonStyle.Danger),
-      );
-
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId("confirm_receipt")
+        .setLabel("Yes, Generate Receipt")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("cancel_receipt")
+        .setLabel("Cancel")
+        .setStyle(ButtonStyle.Danger),
+    );
     await commandReply(message, { embeds: [embed], components: [row] });
   }
 
@@ -411,7 +367,6 @@ client.on("messageCreate", async (message) => {
             .join("\n"),
       )
       .setColor("Purple");
-
     const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId("shop_buy_namechange")
@@ -462,15 +417,10 @@ client.on("messageCreate", async (message) => {
         .setLabel("Check Balance")
         .setStyle(ButtonStyle.Secondary),
     );
-
-    const webhook = await getOrCreateWebhook(message.channelId);
-    if (webhook)
-      await webhook.send({
-        embeds: [embed],
-        components: [row1, row2, row3],
-        username: "FARTLESS",
-        avatarURL: WEBHOOK_AVATAR,
-      });
+    await message.channel.send({
+      embeds: [embed],
+      components: [row1, row2, row3],
+    });
   }
 });
 
@@ -485,7 +435,6 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-
     let totalSpent = 0;
     const itemsList = Object.entries(user.purchases)
       .map(([key, count]) => {
@@ -494,7 +443,6 @@ client.on("interactionCreate", async (interaction) => {
         return `**${shopItems[key]?.name || key}**: ${count}x (${price * count} gorency)`;
       })
       .join("\n");
-
     const balBefore = user.balance + totalSpent;
     const finalEmbed = new EmbedBuilder()
       .setTitle(`🧾 Final Receipt for ${interaction.user.username}`)
@@ -510,28 +458,21 @@ client.on("interactionCreate", async (interaction) => {
           value: `**${user.balance}** gorency`,
         },
       );
-
     user.purchases = {};
     saveDB();
-
-    return interaction.update({
-      embeds: [finalEmbed],
-      components: [],
-    });
+    return interaction.update({ embeds: [finalEmbed], components: [] });
   } else if (interaction.customId === "cancel_receipt") {
-    await interaction.message.delete();
+    await interaction.message.delete().catch(() => {});
   }
 
   if (interaction.customId.startsWith("shop_")) {
     const user = getOrCreateUser(interaction.user.id);
-
     if (interaction.customId === "shop_balance") {
       return interaction.reply({
         content: `💰 Your current balance is: **${user.balance}** gorency.`,
         ephemeral: true,
       });
     }
-
     if (interaction.customId === "shop_user_inventory") {
       const items = Object.entries(user.purchases)
         .map(([key, count]) => `**${shopItems[key]?.name || key}**: ${count}`)
@@ -541,10 +482,8 @@ client.on("interactionCreate", async (interaction) => {
         ephemeral: true,
       });
     }
-
     const itemKey = interaction.customId.replace("shop_buy_", "");
     const item = shopItems[itemKey];
-
     if (item) {
       const currentPurchases = user.purchases[itemKey] || 0;
       if (currentPurchases >= item.limit) {
@@ -559,7 +498,6 @@ client.on("interactionCreate", async (interaction) => {
           ephemeral: true,
         });
       }
-
       user.balance -= item.price;
       user.purchases[itemKey] = currentPurchases + 1;
       saveDB();
@@ -573,25 +511,21 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.customId.startsWith("claim_")) {
     const dropId = interaction.customId.replace("claim_", "");
     const dropData = activeClaims.get(dropId);
-
-    if (!dropData) {
+    if (!dropData)
       return interaction.reply({
         content: "❌ This loot has expired or was fully claimed!",
         ephemeral: true,
       });
-    }
-    if (dropData.claimedBy.has(interaction.user.id)) {
+    if (dropData.claimedBy.has(interaction.user.id))
       return interaction.reply({
         content: "❌ You already claimed this drop!",
         ephemeral: true,
       });
-    }
-    if (dropData.claimsLeft <= 0) {
+    if (dropData.claimsLeft <= 0)
       return interaction.reply({
         content: "❌ Fully claimed!",
         ephemeral: true,
       });
-    }
 
     dropData.claimedBy.add(interaction.user.id);
     dropData.claimsLeft--;
@@ -604,28 +538,20 @@ client.on("interactionCreate", async (interaction) => {
       ephemeral: true,
     });
 
-    const whClient = new WebhookClient({
-      id: dropData.webhookId,
-      token: dropData.webhookToken,
-    });
-
     if (dropData.claimsLeft === 0) {
       activeClaims.delete(dropId);
-      whClient.deleteMessage(dropData.messageId).catch(() => {});
+      interaction.message.delete().catch(() => {});
     } else {
       const updatedEmbed = new EmbedBuilder()
         .setTitle(`🩸 ${dropData.lootName} Appeared!`)
         .setDescription(
-          `Value: **${dropData.value}** | Claims available: **${dropData.claimsLeft}**\n` +
-            `Disappears: <t:${dropData.expiryTimestamp}:R>`,
+          `Value: **${dropData.value}** | Claims available: **${dropData.claimsLeft}**\nDisappears: <t:${dropData.expiryTimestamp}:R>`,
         )
         .setColor("Red");
-
       if (dropData.image)
         updatedEmbed.setThumbnail(`attachment://${dropData.image}`);
-
-      whClient
-        .editMessage(dropData.messageId, { embeds: [updatedEmbed] })
+      await interaction.message
+        .edit({ embeds: [updatedEmbed] })
         .catch(() => {});
     }
   }
