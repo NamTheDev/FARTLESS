@@ -8,6 +8,7 @@ import {
   Message,
   AttachmentBuilder,
   TextChannel,
+  MessageFlags,
 } from "discord.js";
 import * as fs from "fs";
 import { join } from "path";
@@ -194,7 +195,7 @@ function scheduleSpawn(loot: (typeof loots)[0]) {
   }, nextSpawnSeconds * 1000);
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`Log in: ${client.user?.tag}`);
   loots.forEach((loot) => scheduleSpawn(loot));
 });
@@ -423,7 +424,7 @@ client.on("interactionCreate", async (interaction) => {
     if (Object.keys(user.purchases).length === 0) {
       return interaction.reply({
         content: "❌ No items found.",
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
     let totalSpent = 0;
@@ -461,7 +462,7 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.customId === "shop_balance") {
       return interaction.reply({
         content: `💰 Your current balance is: **${user.balance}** gorency.`,
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
     if (interaction.customId === "shop_user_inventory") {
@@ -470,7 +471,7 @@ client.on("interactionCreate", async (interaction) => {
         .join("\n");
       return interaction.reply({
         content: `🎒 **Your Purchased Items:**\n${items || "Nothing yet!"}`,
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
     const itemKey = interaction.customId.replace("shop_buy_", "");
@@ -480,13 +481,13 @@ client.on("interactionCreate", async (interaction) => {
       if (currentPurchases >= item.limit) {
         return interaction.reply({
           content: `❌ You reached the limit for **${item.name}**!`,
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       if (user.balance < item.price) {
         return interaction.reply({
           content: `❌ You need **${item.price}** gorency! Balance: **${user.balance}**.`,
-          ephemeral: true,
+          flags: [MessageFlags.Ephemeral],
         });
       }
       user.balance -= item.price;
@@ -494,7 +495,7 @@ client.on("interactionCreate", async (interaction) => {
       saveDB();
       return interaction.reply({
         content: `✅ Bought **${item.name}**! New balance: **${user.balance}**.`,
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     }
   }
@@ -505,17 +506,17 @@ client.on("interactionCreate", async (interaction) => {
     if (!dropData)
       return interaction.reply({
         content: "❌ This loot has expired or was fully claimed!",
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     if (dropData.claimedBy.has(interaction.user.id))
       return interaction.reply({
         content: "❌ You already claimed this drop!",
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
     if (dropData.claimsLeft <= 0)
       return interaction.reply({
         content: "❌ Fully claimed!",
-        ephemeral: true,
+        flags: [MessageFlags.Ephemeral],
       });
 
     dropData.claimedBy.add(interaction.user.id);
@@ -526,7 +527,7 @@ client.on("interactionCreate", async (interaction) => {
 
     await interaction.reply({
       content: `🎉 Claimed **${dropData.lootName}** for **${dropData.value}**! Balance: ${user.balance}`,
-      ephemeral: true,
+      flags: [MessageFlags.Ephemeral],
     });
 
     if (dropData.claimsLeft === 0) {
