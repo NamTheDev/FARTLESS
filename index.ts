@@ -203,8 +203,9 @@ client.once("clientReady", () => {
 const PREFIX = "rf ";
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot || !message.content.toLowerCase().startsWith(PREFIX))
-    return;
+  try {
+    if (message.author.bot || !message.content.toLowerCase().startsWith(PREFIX))
+      return;
 
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
@@ -414,10 +415,14 @@ client.on("messageCreate", async (message) => {
       components: [row1, row2, row3],
     });
   }
+  } catch (err) {
+    console.error("Message error:", err);
+  }
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
+  try {
+    if (!interaction.isButton()) return;
 
   if (interaction.customId === "confirm_receipt") {
     const user = getOrCreateUser(interaction.user.id);
@@ -454,7 +459,9 @@ client.on("interactionCreate", async (interaction) => {
     saveDB();
     return interaction.update({ embeds: [finalEmbed], components: [] });
   } else if (interaction.customId === "cancel_receipt") {
+    await interaction.deferUpdate().catch(() => {});
     await interaction.message.delete().catch(() => {});
+    return;
   }
 
   if (interaction.customId.startsWith("shop_")) {
@@ -546,6 +553,13 @@ client.on("interactionCreate", async (interaction) => {
         .edit({ embeds: [updatedEmbed] })
         .catch(() => {});
     }
+  }
+
+  if (!interaction.replied && !interaction.deferred) {
+    await interaction.deferUpdate().catch(() => {});
+  }
+  } catch (err) {
+    console.error("Interaction error:", err);
   }
 });
 
