@@ -1,15 +1,11 @@
-# fartless
+# FARTLESS (ABANDONED)
 
-To install dependencies:
+**⚠️ This repository is no longer maintained.**
 
-```bash
-bun install
-```
+The code and features (Economy, Loot System, Shop) have been merged into the [FEARLESS](../FEARLESS) repository. Please refer to that project for the latest updates and active development.
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.3.10. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+### Features Migrated:
+- Loot Drop System
+- Gorency (Economy)
+- Mysterious Shop
+- Inventory & Receipts
