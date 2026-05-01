@@ -150,7 +150,7 @@ async function triggerSpawn(loot: (typeof loots)[0], channelId: string) {
       `Value: **${value}** | Claims available: **${loot.maxClaims}**\n` +
         `Disappears: <t:${expiryTimestamp}:R>`,
     )
-    .setThumbnail(`attachment://${loot.image}`)
+    .setThumbnail(`attachment:
     .setColor("Red");
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -548,7 +548,7 @@ client.on("interactionCreate", async (interaction) => {
         )
         .setColor("Red");
       if (dropData.image)
-        updatedEmbed.setThumbnail(`attachment://${dropData.image}`);
+        updatedEmbed.setThumbnail(`attachment:
       await interaction.message
         .edit({ embeds: [updatedEmbed] })
         .catch(() => {});
