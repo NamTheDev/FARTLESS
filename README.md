@@ -1,10 +1,11 @@
 # FARTLESS (ABANDONED)
 
-**⚠️ This repository is no longer maintained.**
+> [!WARNING]
+> **Abandoned.** This project is no longer maintained.
 
-The code and features (Economy, Loot System, Shop) have been merged into the [FEARLESS](../FEARLESS) repository. Please refer to that project for the latest updates and active development.
+The code and features (Economy, Loot System, Shop) were merged into the [FEARLESS](../FEARLESS) repository. Both projects are now abandoned, and this repository is kept for archival/reference purposes.
 
-### Features Migrated:
+### Features Migrated
 - Loot Drop System
 - Gorency (Economy)
 - Mysterious Shop
